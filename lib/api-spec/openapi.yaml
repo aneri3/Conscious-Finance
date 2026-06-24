@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Conscious Spending personal finance API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: safe-limit
+    description: Safe limit calculations
+  - name: transactions
+    description: Transaction management
+  - name: categories
+    description: Categories
+  - name: sync
+    description: Data sync operations
 paths:
   /healthz:
     get:
@@ -24,13 +32,264 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /safe-limit:
+    get:
+      operationId: getSafeLimit
+      tags: [safe-limit]
+      summary: Get safe limit status
+      description: Returns current month spend vs safe limit
+      responses:
+        "200":
+          description: Safe limit status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafeLimitStatus"
+
+  /transactions:
+    get:
+      operationId: listTransactions
+      tags: [transactions]
+      summary: List all transactions
+      description: Returns all transactions ordered by date descending
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: uncategorizedOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+
+  /transactions/{id}/category:
+    patch:
+      operationId: tagTransactionCategory
+      tags: [transactions]
+      summary: Tag transaction with a category
+      description: Sets the category on a transaction (user-tagged)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryTagInput"
+      responses:
+        "200":
+          description: Updated transaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "404":
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [categories]
+      summary: List all categories
+      description: Returns all spending categories
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+
+  /category-breakdown:
+    get:
+      operationId: getCategoryBreakdown
+      tags: [safe-limit]
+      summary: Get spending breakdown by category
+      description: Returns current month spend grouped by category
+      responses:
+        "200":
+          description: Category breakdown
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategorySpend"
+
+  /sync:
+    post:
+      operationId: syncTransactions
+      tags: [sync]
+      summary: Sync mock AA transactions
+      description: Fetches mock AA transactions, runs categorization pipeline, upserts to DB
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncResult"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    SafeLimitStatus:
+      type: object
+      required:
+        - safeLimitAmount
+        - spentAmount
+        - remainingAmount
+        - isRedZone
+        - percentUsed
+        - monthlyIncome
+        - safeLimitPct
+      properties:
+        safeLimitAmount:
+          type: number
+        spentAmount:
+          type: number
+        remainingAmount:
+          type: number
+        isRedZone:
+          type: boolean
+        percentUsed:
+          type: number
+        monthlyIncome:
+          type: number
+        safeLimitPct:
+          type: number
+
+    Transaction:
+      type: object
+      required:
+        - id
+        - amount
+        - txnType
+        - txnTimestamp
+        - rawNarration
+        - categorizationSource
+        - isP2p
+        - categoryId
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        bankTxnRef:
+          type: string
+        amount:
+          type: number
+        txnType:
+          type: string
+          enum: [DEBIT, CREDIT]
+        txnTimestamp:
+          type: string
+        rawNarration:
+          type: string
+        counterpartyVpa:
+          type: ["string", "null"]
+        mccCode:
+          type: ["string", "null"]
+        categoryId:
+          type: integer
+        categorizationSource:
+          type: string
+          enum: [RULE_EXACT, RULE_REGEX, LLM, USER_TAGGED, P2P_UNCATEGORIZED, PENDING]
+        categorizationConfidence:
+          type: ["number", "null"]
+        isP2p:
+          type: boolean
+        categoryCode:
+          type: ["string", "null"]
+        categoryDisplayName:
+          type: ["string", "null"]
+
+    Category:
+      type: object
+      required: [id, code, displayName, sortOrder]
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        displayName:
+          type: string
+        sortOrder:
+          type: integer
+
+    CategorySpend:
+      type: object
+      required: [categoryCode, displayName, totalAmount, transactionCount]
+      properties:
+        categoryCode:
+          type: string
+        displayName:
+          type: string
+        totalAmount:
+          type: number
+        transactionCount:
+          type: integer
+
+    CategoryTagInput:
+      type: object
+      required: [categoryCode]
+      properties:
+        categoryCode:
+          type: string
+
+    SyncResult:
+      type: object
+      required: [inserted, skipped, total]
+      properties:
+        inserted:
+          type: integer
+        skipped:
+          type: integer
+        total:
+          type: integer
+        breakdown:
+          type: object
+          properties:
+            ruleMatched:
+              type: integer
+            p2pDetected:
+              type: integer
+            llmClassified:
+              type: integer
+            pending:
+              type: integer
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
