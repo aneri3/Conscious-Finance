@@ -1,0 +1,234 @@
+# Build: "Conscious Spending" — Personal Finance Web App (MVP Prototype)
+
+## Product context
+
+Build a web app for young Indian professionals that tracks spending against
+a "Safe Limit" instead of a strict budget. Core philosophy: awareness, not
+restriction. The hero metric is "how much of my Safe Limit is left this
+month" — when the user crosses it, they enter a "Red Zone" state (a gentle
+warning, not a block).
+
+This is a working prototype, not the production app — bank connectivity via
+India's Account Aggregator framework will be wired in later. For now, mock
+that layer entirely with realistic seeded data, but build everything else
+(database, categorization engine, UI) as if it were real.
+
+## Tech stack
+
+- Frontend: React + TypeScript, Vite, Tailwind CSS
+- Backend: Node.js + Express + TypeScript (single repo, REST API)
+- Database: PostgreSQL (use Replit's built-in Postgres)
+- No auth system needed yet — single hardcoded demo user is fine for this
+  prototype
+
+## Database schema
+
+Create these tables in Postgres (adapt types as needed for your ORM/driver,
+Drizzle or Prisma are both fine — pick one and be consistent):
+
+- `users`: id, full_name, monthly_income (numeric), safe_limit_pct (numeric,
+  default 40.00)
+- `categories`: id, code (unique), display_name, sort_order. Seed exactly
+  six rows: RENT_BILLS ("Rent / Bills"), FOOD_GROCERIES ("Food /
+  Groceries"), TRAVEL_COMMUTE ("Travel / Commute"), OUTINGS_LEISURE
+  ("Outings / Leisure"), SHOPPING ("Shopping"), UNCATEGORIZED
+  ("Uncategorized", sort_order last)
+- `category_rules`: id, rule_type (EXACT_VPA | EXACT_MERCHANT | REGEX),
+  match_value, category_id (fk), priority (int, lower checked first),
+  is_active (bool)
+- `transactions`: id, user_id (fk), bank_txn_ref (unique, this is the
+  idempotency key), amount (numeric), txn_type (DEBIT | CREDIT),
+  txn_timestamp, raw_narration, counterparty_vpa (nullable), mcc_code
+  (nullable), category_id (fk, defaults to UNCATEGORIZED), 
+  categorization_source (RULE_EXACT | RULE_REGEX | LLM | USER_TAGGED |
+  P2P_UNCATEGORIZED | PENDING), categorization_confidence (nullable
+  numeric), is_p2p (bool, default false)
+
+Seed `category_rules` with a few realistic entries: exact VPA matches for
+"swiggy@axisbank" → FOOD_GROCERIES, "zomato@icici" → FOOD_GROCERIES,
+"rapido@paytm" → TRAVEL_COMMUTE, and a regex rule matching
+`electricity|broadband|rent` (case-insensitive) → RENT_BILLS.
+
+Seed `users` with one demo user: monthly_income 80000, safe_limit_pct 40.
+
+## Mock AA data layer
+
+Build a `mockAATransactions.ts` module that generates ~60-80 realistic fake
+transactions spread across the current month, including a deliberate mix of:
+
+- Clear merchant payments matching the seeded rules above (Swiggy, Zomato,
+  Rapido)
+- Merchant payments NOT covered by any rule (e.g. "Myntra", "BookMyShow",
+  "Big Basket", "Uber") — these should be the ones that exercise the LLM
+  fallback path
+- P2P-style transfers: narrations like "UPI/9876543210/Ramesh Kumar/payment"
+  with a personal-looking VPA (e.g. "9876543210@ybl") and no MCC code —
+  these should never reach the LLM, they go straight to Uncategorized
+- A couple of CREDIT transactions (salary, refund) that should be excluded
+  from Safe Limit spend calculations entirely
+
+Structure this mock module behind a clear interface (e.g. `fetchAATransactions(userId): Promise<RawAATransaction[]>`)
+so swapping in a real TSP integration later is a one-file change, not a
+rewrite. Put a comment at the top of this file explicitly noting it's a
+placeholder for real Account Aggregator / TSP integration (Setu, FinBox,
+OneMoney, Anumati, etc.) and will be replaced.
+
+## Categorization engine
+
+Build a three-tier categorization pipeline as a backend service, run once
+against the seeded mock transactions on app startup (or via a "sync" button
+in the UI):
+
+1. **Rule engine (tier 1+2)**: check `category_rules` table — exact VPA
+   match first (priority order), then regex match against narration. First
+   match wins. This is deterministic, no confidence score.
+
+2. **P2P detector**: runs BEFORE any LLM call, on transactions the rule
+   engine didn't match. Use a heuristic combining: no MCC code present,
+   counterparty VPA looks personal (matches pattern like
+   `^[a-z0-9.]+@(ybl|paytm|apl|axl)$` rather than a known merchant string),
+   and/or narration matches a raw "UPI/<10-digit-phone>/..." pattern.
+   Require at least two of these signals before flagging as P2P. If
+   flagged, categorize as UNCATEGORIZED with source P2P_UNCATEGORIZED and
+   skip the LLM entirely — this is a structural property of the
+   transaction, not something to resolve semantically.
+
+3. **LLM fallback (mocked for now)**: for transactions that are neither
+   rule-matched nor flagged as P2P, call a mocked classifier function
+   `classifyWithLLM(txn): Promise<{category, confidence}>` that you
+   implement as a stub returning plausible category guesses (it's fine to
+   hardcode some keyword-based guessing logic here as a placeholder, e.g.
+   if narration includes "myntra" or "uber" guess SHOPPING/TRAVEL_COMMUTE
+   with confidence 0.8 — just make it behave realistically). Structure this
+   function with a clear seam (e.g. a `callModel` parameter or injected
+   dependency) so swapping in a real Claude API call later is trivial. If
+   confidence would be below 0.6, fall back to UNCATEGORIZED with source
+   PENDING. CREDIT transactions should skip the LLM step entirely and go
+   straight to UNCATEGORIZED/PENDING.
+
+Expose this as a backend endpoint, e.g. `POST /api/sync` that runs all mock
+transactions through the pipeline and upserts them into the `transactions`
+table, using `bank_txn_ref` as the conflict/dedup key (implement this as
+`ON CONFLICT (bank_txn_ref) DO NOTHING` so that clicking sync again never
+overwrites a transaction that already exists — this is what protects a
+user's manual quick-tag work in the inbox screen from being reset back to
+Uncategorized by a later sync).
+
+## Safe Limit calculation
+
+Backend logic (can be a simple service function, doesn't need to be a
+separate microservice):
+
+- Safe Limit amount = `monthly_income * (safe_limit_pct / 100)`
+- Spent amount = sum of all DEBIT transactions in the current calendar
+  month where `categorization_source != 'P2P_UNCATEGORIZED'` is NOT a
+  reason to exclude them — P2P spend still counts as spend, it's just
+  uncategorized by type. Only exclude CREDIT transactions from this sum.
+- Red Zone = true when spent amount > Safe Limit amount
+- Expose via `GET /api/safe-limit` returning `{ safeLimitAmount,
+  spentAmount, remainingAmount, isRedZone, percentUsed }`
+
+## Frontend — three screens
+
+**1. Home screen**
+- Large, central display of remaining Safe Limit amount (e.g. "₹14,200 left
+  this month")
+- A simple horizontal progress bar showing percent of Safe Limit used,
+  colored per the Safe Limit color logic defined in the Visual Style
+  section below (green/amber/red banded around the limit itself, not a
+  generic progress bar)
+- If spend is in the red band, show a calm, non-alarming banner: something
+  like "You've crossed your Safe Limit for this month — no judgment, just
+  awareness. Here's where it went." with a link to the breakdown screen
+- A small breakdown by category below the main number (simple horizontal
+  bars or a donut chart, your choice — keep it visually calm, not anxious)
+- A "Sync transactions" button that calls `POST /api/sync` and refreshes
+  the view
+
+**2. Transaction list screen**
+- List of all transactions, most recent first, grouped by date
+- Each row shows: merchant/narration, amount, category badge (color-coded
+  per category), and a small icon/indicator if it's marked P2P
+- Uncategorized and P2P-flagged transactions should visually stand out
+  (e.g. a subtle highlight or badge) so the user notices them
+
+**3. Quick-tag inbox screen**
+- Shows only transactions where category is UNCATEGORIZED (covers both
+  P2P_UNCATEGORIZED and PENDING/low-confidence LLM misses)
+- For each, show the narration/amount and six tap-to-assign category
+  buttons (one per real category, no "Uncategorized" option here since
+  that's the current state)
+- Tapping a category should immediately PATCH the transaction's category
+  via an endpoint like `PATCH /api/transactions/:id/category` (set
+  categorization_source to USER_TAGGED) and remove it from this list with
+  a quick visual confirmation (no modal, no extra confirmation step — this
+  needs to feel like one tap and done)
+- Show a count badge of how many are pending ("12 to review") so it's
+  satisfying to clear to zero
+
+## Visual style
+
+Calm, modern, financial-but-friendly — think more "Cred" or "Walnut" than
+spreadsheet. Soft rounded cards, generous whitespace. No dense tables on
+the home screen — the home screen's only job is to answer "am I okay this
+month" in under two seconds of looking at it.
+
+### Safe Limit color logic (important — implement exactly this, not a generic budget-app red/green)
+
+The color is driven by **spend relative to the Safe Limit amount itself**,
+not a generic "% used" scale. Bands:
+
+- **Green** — spend is 0% to 87.5% of the Safe Limit (comfortably under)
+- **Amber/orange** — spend is 87.5% to 112.5% of the Safe Limit. This is
+  the "safe zone" band, deliberately centered ON the limit (±12.5%), not a
+  late-stage warning before red. It means "you're right around your
+  number, worth a glance" — not danger.
+- **Red** — spend is beyond 112.5% of the Safe Limit (clearly over)
+
+Example with income ₹1,000 and a 40% Safe Limit (₹400): green is ₹0–350,
+amber is ₹350–450, red is ₹450+. Scale this proportionally to the user's
+actual Safe Limit amount, don't hardcode these rupee values.
+
+Implementation:
+- Both the progress bar fill color AND a subtle background tint on the
+  Safe Limit card should shift together along this same scale — compute
+  one color value per render and apply it to both (e.g. full color for the
+  bar, ~10% opacity tint of the same color for the card background).
+- Within each band, interpolate smoothly between the band's start and end
+  RGB values rather than a hard color jump at each threshold, so the
+  transition feels continuous rather than a sudden snap between three flat
+  colors. Reference RGB anchors: green `rgb(99, 153, 34)`, amber
+  `rgb(239, 159, 39)`, red `rgb(226, 75, 74)`.
+- Show a small marker/tick on the progress bar at the exact Safe Limit
+  position (40% mark in the example above) so the user can see where their
+  actual limit sits relative to current spend, not just the color.
+- Status text under the bar should match tone to band: green → "Comfortably
+  under your safe limit", amber → "Right around your safe limit — the safe
+  zone" (calm, not alarming), red → "Red zone — over your safe limit this
+  month".
+
+## What NOT to build right now
+
+- No real authentication/login flow — single demo user is fine
+- No real Account Aggregator/TSP integration — mocked data only, but keep
+  the interface swap-in-ready as described above
+- No real LLM API call — mocked classifier function, but keep the seam
+  swap-in-ready as described above
+- No push notifications, no multi-month history view, no settings screen
+  beyond what's needed to demo Safe Limit % if you want to make it
+  adjustable for demo purposes
+
+## Build order
+
+1. Set up Postgres schema + seed data (categories, rules, demo user)
+2. Build mock AA transaction generator
+3. Build the three-tier categorization service, test it against the mock
+   data via a script or console log before wiring up the UI
+4. Build the Safe Limit calculation endpoint
+5. Build the three frontend screens in the order listed above
+6. Wire up the sync button and confirm the full loop works: sync → categorize
+   → Safe Limit updates → quick-tag inbox populates → tagging clears the
+   inbox and recalculates Safe Limit
+
+Confirm each step works before moving to the next rather than building
+everything then debugging at the end.
