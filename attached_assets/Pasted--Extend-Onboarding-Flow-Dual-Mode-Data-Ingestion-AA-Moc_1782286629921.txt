@@ -1,0 +1,225 @@
+# Extend: Onboarding Flow + Dual-Mode Data Ingestion (AA Mock vs CSV Upload)
+
+## Context
+
+The "Conscious Spending" MVP base build is already complete and working —
+Postgres schema, the three-tier categorization engine (rules → P2P heuristic
+→ mocked LLM fallback), the Safe Limit calculation, and the three frontend
+screens (Home, Transaction list, Quick-tag inbox) all exist and function.
+
+This is an **incremental extension** on top of that existing codebase, not a
+rebuild. Do not regenerate or restructure files that already work — add to
+them. Reuse the existing categorization service, existing types, and
+existing DB connection setup rather than creating parallel versions of any
+of it.
+
+## What's changing
+
+Two things:
+
+1. A first-run **onboarding wizard** that captures income, Safe Limit %,
+   and which data source the user wants (mocked AA sync vs. uploading their
+   own bank CSV).
+2. A **CSV upload pipeline** as a second, parallel ingestion path alongside
+   the existing AA mock sync — both paths feed the exact same
+   categorization engine and land in the exact same `transactions` table.
+
+## 1. Database changes
+
+Add one column to the existing `users` table:
+
+```sql
+ALTER TABLE users ADD COLUMN data_source_mode TEXT
+  CHECK (data_source_mode IN ('AA_MOCK', 'CSV_UPLOAD'));
+```
+
+It stays `NULL` until onboarding completes — this null-ness is exactly what
+the onboarding block check is based on (see below). No changes needed to
+`transactions` or `category_rules` — CSV-sourced transactions flow into the
+same `transactions` table as AA-mock ones, distinguished only by how their
+`bank_txn_ref` was generated (see section 3).
+
+## 2. Backend: user profile + setup endpoint
+
+**`POST /api/user/setup`**
+- Body: `{ monthlyIncome: number, safeLimitPct: number, dataSourceMode: "AA_MOCK" | "CSV_UPLOAD" }`
+- Validate: `monthlyIncome > 0`, `0 < safeLimitPct <= 100`, `dataSourceMode`
+  is one of the two allowed values. Reject with 400 and a clear message
+  otherwise — never silently accept bad numeric input on a money app.
+- Persists these three fields onto the single demo user row.
+
+**`GET /api/user/profile`**
+- Returns the current user's profile including a derived `isOnboarded`
+  boolean: `true` only when both `monthlyIncome` and `dataSourceMode` are
+  non-null. The frontend uses this single flag to decide whether to show
+  the onboarding block or the dashboard — don't duplicate this logic on the
+  frontend, compute it once on the backend and trust it.
+
+**Refactor `GET /api/safe-limit`** (this endpoint already exists): stop
+using any hardcoded income/percentage values if any remain, and read
+`monthly_income` and `safe_limit_pct` from the user's row instead — these
+are exactly the fields onboarding now populates. Behavior of the endpoint
+itself (the response shape, the Red Zone calculation) does not change.
+
+## 3. Backend: CSV ingestion pipeline
+
+**`POST /api/upload-csv`** — multipart file upload (field name `statement`),
+max 5MB.
+
+Pipeline, in order:
+
+1. **Parse the CSV.** Bank exports vary in column naming — match
+   case-insensitively against a small explicit list of known header
+   variants rather than assuming one fixed format:
+   - Date: `date`, `transaction date`, `txn date`, `value date`
+   - Narration: `narration`, `description`, `particulars`, `transaction details`, `remarks`
+   - Debit: `debit`, `debit amount`, `withdrawal amount`, `withdrawal amt`
+   - Credit: `credit`, `credit amount`, `deposit amount`, `deposit amt`
+
+   If Date or Narration columns can't be found, reject the upload with a
+   clear error listing supported header names — don't guess.
+
+   **Date format — handle both shapes banks actually export, not just
+   one:** some banks export purely numeric dates (`DD/MM/YYYY` or
+   `DD-MM-YYYY`), but several major banks — HDFC and ICICI among them —
+   commonly export with a three-letter alphabetical month abbreviation
+   instead, e.g. `24-Jun-2026`. A date parser that only matches numeric
+   groups will reject every single row from those banks' exports. Try the
+   numeric pattern first, then fall back to matching a `DD-MMM-YYYY`
+   pattern with a month-name lookup (jan/feb/mar/.../dec, case-insensitive)
+   before giving up and reporting the row as unparseable. Parse to ISO
+   8601 with midnight as the time component either way — CSV statements
+   rarely include time-of-day, which is exactly why the hash tiebreaker in
+   the next step matters.
+
+   **Amount columns — treat placeholders as zero, never let them become
+   NaN:** when a bank uses separate Debit and Credit columns, the column
+   that doesn't apply to a given row is frequently not left truly blank —
+   it often contains a placeholder like a bare hyphen `-`, a run of
+   spaces, or sometimes `0.00`. Calling `parseFloat` directly on a hyphen
+   produces `NaN`, and letting a `NaN` leak into any amount math (sum,
+   comparison, the Safe Limit calculation) is silent corruption on a money
+   app, not a graceful failure. Write a small dedicated amount-parsing
+   helper that strips whitespace and thousands-separator commas, treats
+   an empty string, a bare hyphen, or a double-hyphen as exactly `0`, and
+   falls back to `0` for any other non-finite parse result — never let a
+   raw `parseFloat` result flow downstream unchecked.
+
+2. **Generate a deterministic `bank_txn_ref` via hashing — with a critical
+   edge case to handle correctly:**
+
+   CSV statements have no native transaction reference (no UTR), unlike AA
+   payloads. Generate one by hashing `timestamp + narration + amount`
+   (SHA-256). BUT: because CSV dates are date-only with no time, two
+   genuinely different transactions can share an identical date, amount,
+   and narration — this is common for small repeated P2P payments (e.g.
+   two ₹50 tea-stall UPI transfers on the same day). A naive hash of just
+   those three fields would collide and one transaction would be silently
+   dropped by the dedup logic in step 4. **Fold the row's position in the
+   file (1-based index, header row excluded) into the hash composite** so
+   two visually-identical rows in the same file still get distinct refs,
+   while re-uploading the exact same file still reproduces the exact same
+   refs (so true duplicate file uploads are still caught downstream). Hash
+   composite: `` `${isoTimestamp}|${narration.trim().toLowerCase()}|${amount.toFixed(2)}|${rowIndex}` ``.
+
+3. **Map each parsed row into the existing `RawAATransaction` type** — the
+   same canonical shape the AA mock path already produces. Set `mode` to
+   `"UNKNOWN"` (CSV exports don't reliably indicate UPI vs. NEFT vs. card)
+   and leave `counterpartyVpa`/`mccCode` undefined (CSVs don't carry
+   these). Add an `ingestionSource: "CSV_UPLOAD"` field to the type if it
+   doesn't already exist, purely for traceability — categorization logic
+   should not branch on this field.
+
+   **Important fix to the existing P2P detector**: if the current P2P
+   detection function gates on `txn.mode === "UPI"` before checking its
+   structural signals, that condition will silently disable P2P detection
+   for every CSV-sourced row, since CSV rows are tagged `mode: "UNKNOWN"`.
+   Remove that mode gate — the underlying signals (missing MCC code,
+   personal-looking VPA pattern, raw-phone narration pattern) work fine
+   without knowing the payment rail for certain, and CSV-sourced P2P
+   transfers are exactly the transactions this detector needs to keep
+   catching.
+
+4. **Run every mapped transaction through the existing three-tier
+   categorization service unchanged** — rules first, then the (now
+   mode-agnostic) P2P check, then the mocked LLM fallback for CREDIT-
+   excluded DEBIT transactions that survive both. Do not write a separate
+   categorization path for CSV transactions; reuse the exact same service
+   function the AA mock sync path calls.
+
+5. **Upsert into `transactions`** using
+   `ON CONFLICT (bank_txn_ref) DO NOTHING` — the same clause already used
+   by the AA mock sync endpoint, for the same reason: this protects any
+   transaction a user has already manually tagged in the quick-tag inbox
+   from being silently reset if the same CSV gets uploaded again.
+
+Response shape: `{ totalRowsParsed, totalRowsIngested, duplicatesSkipped, errors: [{ rowIndex, reason }] }`.
+A single malformed row should be recorded in `errors` and skipped, never
+abort the whole upload.
+
+## 4. Frontend: onboarding wizard
+
+A modal or full-screen step that **blocks the dashboard** whenever
+`GET /api/user/profile` returns `isOnboarded: false`. Three inputs:
+
+1. Monthly income — numeric input, formatted as currency (e.g. placeholder
+   "₹80,000")
+2. Safe Limit % — slider or numeric input, default 40, range roughly
+   20–60% (the product's own guidance is 35–45%, but allow some range
+   either side rather than hard-locking it)
+3. Data source — two clearly distinct buttons, "Use sample data (AA mock)"
+   and "Upload my bank statement (CSV)", mapping to `AA_MOCK` and
+   `CSV_UPLOAD` respectively. Make these feel like a real choice, not a
+   throwaway toggle — this decision changes what the home screen looks
+   like afterward.
+
+On submit, `POST /api/user/setup`, then re-fetch the profile and unblock
+the dashboard.
+
+## 5. Frontend: dynamic home screen toggle
+
+The home screen already has a "Sync transactions" button calling
+`POST /api/sync`. Make it conditional on the user's `dataSourceMode`:
+
+- `AA_MOCK` → keep the existing "Sync transactions" button exactly as is,
+  no change to its behavior.
+- `CSV_UPLOAD` → replace it with a file picker component ("Upload
+  statement"), accepting `.csv` only, that posts to `/api/upload-csv` as
+  multipart form data. After a successful upload, show a brief summary
+  (e.g. "18 transactions added, 2 duplicates skipped") and refresh the Safe
+  Limit and transaction list the same way the sync button already does.
+
+Everything downstream of ingestion — Safe Limit display, transaction list,
+quick-tag inbox — is shared between both modes and needs no changes; both
+paths write to the same `transactions` table through the same
+categorization pipeline.
+
+## Build order
+
+1. Add the `data_source_mode` column migration
+2. Build and test `POST /api/user/setup` + `GET /api/user/profile`
+3. Refactor `GET /api/safe-limit` to read from the user row, confirm the
+   existing AA mock flow still works end to end unaffected
+4. Fix the P2P detector's mode gate (this is a small, important fix — test
+   it explicitly with a mode `"UNKNOWN"` transaction before moving on)
+5. Build the CSV parsing + hashing + mapping pipeline, test it with a
+   sample CSV that includes: at least one pair of same-day/same-amount/
+   same-narration rows (to confirm they don't collide), at least one row
+   using `DD-MMM-YYYY` date format like `24-Jun-2026` (to confirm the
+   month-abbreviation fallback works, not just numeric dates), and at
+   least one row with a hyphen placeholder in the unused Debit or Credit
+   column (to confirm it resolves to zero rather than `NaN` or a
+   misclassified transaction type)
+6. Wire `POST /api/upload-csv` end to end through the existing
+   categorization service and confirm upserts respect
+   `ON CONFLICT DO NOTHING`
+7. Build the onboarding wizard frontend, confirm it correctly blocks/
+   unblocks based on `isOnboarded`
+8. Build the dynamic home screen toggle and confirm both ingestion modes
+   work end to end independently
+
+Confirm each step works before moving to the next, and don't consider step
+5 done until all three of those specific edge cases pass — they're the
+difference between this working on a real HDFC or ICICI statement and
+silently failing or mis-recording amounts the first time someone uploads
+one.

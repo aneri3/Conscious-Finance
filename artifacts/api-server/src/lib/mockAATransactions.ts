@@ -19,6 +19,10 @@ export interface RawAATransaction {
   rawNarration: string;
   counterpartyVpa: string | null;
   mccCode: string | null;
+  /** Payment rail — "UNKNOWN" for CSV-sourced rows that don't carry mode info */
+  mode?: "UPI" | "NEFT" | "IMPS" | "CARD" | "UNKNOWN";
+  /** Where this transaction was ingested from — for traceability only, never branch categorization on this */
+  ingestionSource?: "AA_MOCK" | "CSV_UPLOAD";
 }
 
 function randomBetween(min: number, max: number): number {

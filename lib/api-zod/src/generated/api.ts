@@ -135,3 +135,37 @@ export const SyncTransactionsResponse = zod.object({
 })
 
 
+/**
+ * Returns the current user profile including onboarding status
+ * @summary Get user profile
+ */
+export const GetUserProfileResponse = zod.object({
+  "id": zod.number(),
+  "fullName": zod.string(),
+  "monthlyIncome": zod.number(),
+  "safeLimitPct": zod.number(),
+  "dataSourceMode": zod.union([zod.literal('AA_MOCK'),zod.literal('CSV_UPLOAD'),zod.literal(null)]).nullish(),
+  "isOnboarded": zod.boolean()
+})
+
+
+/**
+ * Sets monthly income, safe limit percentage, and data source mode
+ * @summary Complete onboarding setup
+ */
+export const SetupUserBody = zod.object({
+  "monthlyIncome": zod.number(),
+  "safeLimitPct": zod.number(),
+  "dataSourceMode": zod.enum(['AA_MOCK', 'CSV_UPLOAD'])
+})
+
+export const SetupUserResponse = zod.object({
+  "id": zod.number(),
+  "fullName": zod.string(),
+  "monthlyIncome": zod.number(),
+  "safeLimitPct": zod.number(),
+  "dataSourceMode": zod.union([zod.literal('AA_MOCK'),zod.literal('CSV_UPLOAD'),zod.literal(null)]).nullish(),
+  "isOnboarded": zod.boolean()
+})
+
+

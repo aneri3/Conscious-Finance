@@ -18,3 +18,7 @@ export * from './syncResultBreakdown';
 export * from './transaction';
 export * from './transactionCategorizationSource';
 export * from './transactionTxnType';
+export * from './userProfile';
+export * from './userProfileDataSourceMode';
+export * from './userSetupInput';
+export * from './userSetupInputDataSourceMode';

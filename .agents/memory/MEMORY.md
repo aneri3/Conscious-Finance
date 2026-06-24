@@ -1,0 +1,2 @@
+- [OpenAPI codegen + multipart](codegen-multipart.md) — multipart/form-data endpoints cause File/Blob conflicts; keep them out of the OpenAPI spec.
+- [api-zod barrel export conflict](codegen-multipart.md) — use `export type *` (not `export *`) for the types barrel in lib/api-zod/src/index.ts to avoid name conflicts with const zod schemas.

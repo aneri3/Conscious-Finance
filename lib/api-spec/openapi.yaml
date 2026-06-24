@@ -18,6 +18,8 @@ tags:
     description: Categories
   - name: sync
     description: Data sync operations
+  - name: user
+    description: User profile and setup
 paths:
   /healthz:
     get:
@@ -151,6 +153,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SyncResult"
+
+  /user/profile:
+    get:
+      operationId: getUserProfile
+      tags: [user]
+      summary: Get user profile
+      description: Returns the current user profile including onboarding status
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /user/setup:
+    post:
+      operationId: setupUser
+      tags: [user]
+      summary: Complete onboarding setup
+      description: Sets monthly income, safe limit percentage, and data source mode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSetupInput"
+      responses:
+        "200":
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 
 components:
   schemas:
@@ -286,6 +329,36 @@ components:
               type: integer
             pending:
               type: integer
+
+    UserProfile:
+      type: object
+      required: [id, fullName, monthlyIncome, safeLimitPct, isOnboarded]
+      properties:
+        id:
+          type: integer
+        fullName:
+          type: string
+        monthlyIncome:
+          type: number
+        safeLimitPct:
+          type: number
+        dataSourceMode:
+          type: ["string", "null"]
+          enum: ["AA_MOCK", "CSV_UPLOAD", null]
+        isOnboarded:
+          type: boolean
+
+    UserSetupInput:
+      type: object
+      required: [monthlyIncome, safeLimitPct, dataSourceMode]
+      properties:
+        monthlyIncome:
+          type: number
+        safeLimitPct:
+          type: number
+        dataSourceMode:
+          type: string
+          enum: [AA_MOCK, CSV_UPLOAD]
 
     ErrorResponse:
       type: object

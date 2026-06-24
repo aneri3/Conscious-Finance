@@ -94,6 +94,41 @@ export interface SyncResult {
   breakdown?: SyncResultBreakdown;
 }
 
+/**
+ * @nullable
+ */
+export type UserProfileDataSourceMode = typeof UserProfileDataSourceMode[keyof typeof UserProfileDataSourceMode] | null;
+
+
+export const UserProfileDataSourceMode = {
+  AA_MOCK: 'AA_MOCK',
+  CSV_UPLOAD: 'CSV_UPLOAD',
+} as const;
+
+export interface UserProfile {
+  id: number;
+  fullName: string;
+  monthlyIncome: number;
+  safeLimitPct: number;
+  /** @nullable */
+  dataSourceMode?: UserProfileDataSourceMode;
+  isOnboarded: boolean;
+}
+
+export type UserSetupInputDataSourceMode = typeof UserSetupInputDataSourceMode[keyof typeof UserSetupInputDataSourceMode];
+
+
+export const UserSetupInputDataSourceMode = {
+  AA_MOCK: 'AA_MOCK',
+  CSV_UPLOAD: 'CSV_UPLOAD',
+} as const;
+
+export interface UserSetupInput {
+  monthlyIncome: number;
+  safeLimitPct: number;
+  dataSourceMode: UserSetupInputDataSourceMode;
+}
+
 export interface ErrorResponse {
   error: string;
 }

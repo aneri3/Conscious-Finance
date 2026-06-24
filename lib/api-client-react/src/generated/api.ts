@@ -28,7 +28,9 @@ import type {
   ListTransactionsParams,
   SafeLimitStatus,
   SyncResult,
-  Transaction
+  Transaction,
+  UserProfile,
+  UserSetupInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -582,5 +584,155 @@ export const useSyncTransactions = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSyncTransactionsMutationOptions(options));
+    }
+
+export const getGetUserProfileUrl = () => {
+
+
+
+
+  return `/api/user/profile`
+}
+
+/**
+ * Returns the current user profile including onboarding status
+ * @summary Get user profile
+ */
+export const getUserProfile = async ( options?: RequestInit): Promise<UserProfile> => {
+
+  return customFetch<UserProfile>(getGetUserProfileUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUserProfileQueryKey = () => {
+    return [
+    `/api/user/profile`
+    ] as const;
+    }
+
+
+export const getGetUserProfileQueryOptions = <TData = Awaited<ReturnType<typeof getUserProfile>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUserProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUserProfileQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUserProfile>>> = ({ signal }) => getUserProfile({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUserProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUserProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getUserProfile>>>
+export type GetUserProfileQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get user profile
+ */
+
+export function useGetUserProfile<TData = Awaited<ReturnType<typeof getUserProfile>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUserProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUserProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetupUserUrl = () => {
+
+
+
+
+  return `/api/user/setup`
+}
+
+/**
+ * Sets monthly income, safe limit percentage, and data source mode
+ * @summary Complete onboarding setup
+ */
+export const setupUser = async (userSetupInput: UserSetupInput, options?: RequestInit): Promise<UserProfile> => {
+
+  return customFetch<UserProfile>(getSetupUserUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      userSetupInput,)
+  }
+);}
+
+
+
+
+export const getSetupUserMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setupUser>>, TError,{data: BodyType<UserSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setupUser>>, TError,{data: BodyType<UserSetupInput>}, TContext> => {
+
+const mutationKey = ['setupUser'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setupUser>>, {data: BodyType<UserSetupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setupUser(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetupUserMutationResult = NonNullable<Awaited<ReturnType<typeof setupUser>>>
+    export type SetupUserMutationBody = BodyType<UserSetupInput>
+    export type SetupUserMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Complete onboarding setup
+ */
+export const useSetupUser = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setupUser>>, TError,{data: BodyType<UserSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setupUser>>,
+        TError,
+        {data: BodyType<UserSetupInput>},
+        TContext
+      > => {
+      return useMutation(getSetupUserMutationOptions(options));
     }
 
