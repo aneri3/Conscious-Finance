@@ -2,3 +2,4 @@
 - [api-zod barrel export conflict](codegen-multipart.md) — use `export type *` (not `export *`) for the types barrel in lib/api-zod/src/index.ts to avoid name conflicts with const zod schemas.
 - [P2P heuristics interaction](p2p-heuristics-interaction.md) — heuristic #2 (odd-amount) must run FIRST and removes the txn from UNCATEGORIZED; velocity cluster candidates require P2P+UNCATEGORIZED after #2 runs, so cluster demo amounts must be round (divisible by 5).
 - [Mock AA data refs must be static](p2p-heuristics-interaction.md) — mock bankTxnRef values must be static strings (e.g. MOCK-TXN-001), not Date.now()-based, or re-syncing generates new refs and ON CONFLICT dedup never fires.
+- [pdf-parse startup crash](pdf-parse-quirks.md) — import from internal lib path, not the package root, to avoid a module-level self-test that crashes on startup.

@@ -3,21 +3,32 @@ import multer from "multer";
 import { db } from "@workspace/db";
 import { transactionsTable, categoriesTable } from "@workspace/db";
 import { parseBankCsv } from "../lib/csvIngestionPipeline";
+import { parseBankPdf } from "../lib/pdfIngestionPipeline";
 import { categorizeBatch, invalidateRuleCache } from "../lib/categorizationEngine";
 
 const router: IRouter = Router();
 
 const DEMO_USER_ID = 1;
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB (PDFs can be larger)
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype === "text/csv" || file.originalname.toLowerCase().endsWith(".csv")) {
+    const name = file.originalname.toLowerCase();
+    const isCsv =
+      file.mimetype === "text/csv" ||
+      file.mimetype === "application/csv" ||
+      name.endsWith(".csv");
+    const isPdf =
+      file.mimetype === "application/pdf" ||
+      file.mimetype === "application/x-pdf" ||
+      name.endsWith(".pdf");
+
+    if (isCsv || isPdf) {
       cb(null, true);
     } else {
-      cb(new Error("Only CSV files are accepted"));
+      cb(new Error("Only CSV or PDF files are accepted"));
     }
   },
 });
@@ -31,16 +42,33 @@ router.post(
       return;
     }
 
-    // Parse CSV
-    let parseResult: ReturnType<typeof parseBankCsv>;
+    const fileName = req.file.originalname.toLowerCase();
+    const isPdf =
+      req.file.mimetype === "application/pdf" ||
+      req.file.mimetype === "application/x-pdf" ||
+      fileName.endsWith(".pdf");
+
+    // Parse the file
+    let transactions: Awaited<ReturnType<typeof parseBankCsv>>["transactions"];
+    let parseErrors: Array<{ rowIndex: number; reason: string }>;
+    let totalRowsParsed: number;
+
     try {
-      parseResult = parseBankCsv(req.file.buffer);
+      if (isPdf) {
+        const result = await parseBankPdf(req.file.buffer);
+        transactions = result.transactions;
+        parseErrors = result.errors;
+        totalRowsParsed = result.totalRowsParsed;
+      } else {
+        const result = parseBankCsv(req.file.buffer);
+        transactions = result.transactions;
+        parseErrors = result.errors;
+        totalRowsParsed = result.totalRowsParsed;
+      }
     } catch (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : "CSV parse failed" });
+      res.status(400).json({ error: err instanceof Error ? err.message : "File parse failed" });
       return;
     }
-
-    const { transactions, errors: parseErrors, totalRowsParsed } = parseResult;
 
     if (transactions.length === 0 && totalRowsParsed > 0) {
       res.status(400).json({
@@ -50,7 +78,16 @@ router.post(
       return;
     }
 
-    // Run the full shared categorization pipeline (rules → P2P → heuristics #1/#2/#4 → LLM → clustering #3)
+    if (transactions.length === 0) {
+      res.status(400).json({
+        error: isPdf
+          ? "No transactions found in the PDF. Make sure it is a digital (not scanned) bank statement."
+          : "No transactions found in the CSV file.",
+      });
+      return;
+    }
+
+    // Run the full shared categorization pipeline
     invalidateRuleCache();
     const allCategories = await db.select().from(categoriesTable);
     const categoryMap = new Map<string, number>(allCategories.map((c) => [c.code, c.id]));
@@ -95,14 +132,14 @@ router.post(
           duplicatesSkipped++;
         }
       } catch (err) {
-        req.log.error({ err, bankTxnRef: raw.bankTxnRef }, "Failed to insert CSV transaction");
+        req.log.error({ err, bankTxnRef: raw.bankTxnRef }, "Failed to insert transaction");
         rowErrors.push({ rowIndex: i + 1, reason: "Database insert failed" });
       }
     }
 
     req.log.info(
-      { totalRowsParsed, totalRowsIngested, duplicatesSkipped, errors: rowErrors.length },
-      "CSV upload complete",
+      { totalRowsParsed, totalRowsIngested, duplicatesSkipped, errors: rowErrors.length, isPdf },
+      "Statement upload complete",
     );
 
     res.json({

@@ -115,7 +115,7 @@ export default function Home() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv"
+              accept=".csv,.pdf,text/csv,application/pdf"
               className="hidden"
               onChange={handleCsvUpload}
               id="csv-upload-input"

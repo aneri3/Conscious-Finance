@@ -145,7 +145,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             <div className="flex flex-col gap-2">
               <h2 className="text-2xl font-display font-semibold tracking-tight">How do you want to add transactions?</h2>
               <p className="text-muted-foreground text-sm leading-relaxed">
-                You can use our realistic sample data to explore the app, or upload your own bank statement CSV.
+                You can use our realistic sample data to explore the app, or upload your own bank statement (CSV or PDF).
               </p>
             </div>
 
