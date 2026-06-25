@@ -11,4 +11,6 @@ export type SyncResultBreakdown = {
   p2pDetected?: number;
   llmClassified?: number;
   pending?: number;
+  heuristicOddAmount?: number;
+  heuristicVelocityCluster?: number;
 };

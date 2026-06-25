@@ -6,6 +6,7 @@ import transactionsRouter from "./transactions";
 import categoriesRouter from "./categories";
 import userRouter from "./user";
 import uploadCsvRouter from "./uploadCsv";
+import resetRouter from "./reset";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(transactionsRouter);
 router.use(categoriesRouter);
 router.use(userRouter);
 router.use(uploadCsvRouter);
+router.use(resetRouter);
 
 export default router;

@@ -19,6 +19,18 @@ export interface SafeLimitStatus {
   safeLimitPct: number;
 }
 
+/**
+ * Metadata attached by behavioral heuristics — never drives hard categorization
+ */
+export interface TransactionMetadata {
+  /** Heuristic #1: early-month large P2P — suggest RENT_BILLS but never auto-apply */
+  isRecurringServiceSuggestion?: boolean;
+  /** Category code suggested by the calendar-anchor heuristic */
+  suggestedCategoryOnDateHeuristic?: string;
+  /** Heuristic #4: weekend round-number transfer — elevated priority flag in inbox */
+  isLikelyWeekendCashSwap?: boolean;
+}
+
 export type TransactionTxnType = typeof TransactionTxnType[keyof typeof TransactionTxnType];
 
 
@@ -37,6 +49,8 @@ export const TransactionCategorizationSource = {
   USER_TAGGED: 'USER_TAGGED',
   P2P_UNCATEGORIZED: 'P2P_UNCATEGORIZED',
   PENDING: 'PENDING',
+  HEURISTIC_ODD_AMOUNT: 'HEURISTIC_ODD_AMOUNT',
+  HEURISTIC_VELOCITY_CLUSTER: 'HEURISTIC_VELOCITY_CLUSTER',
 } as const;
 
 export interface Transaction {
@@ -56,6 +70,9 @@ export interface Transaction {
   /** @nullable */
   categorizationConfidence?: number | null;
   isP2p: boolean;
+  /** @nullable */
+  clusterId?: string | null;
+  metadata: TransactionMetadata;
   /** @nullable */
   categoryCode?: string | null;
   /** @nullable */
@@ -85,6 +102,8 @@ export type SyncResultBreakdown = {
   p2pDetected?: number;
   llmClassified?: number;
   pending?: number;
+  heuristicOddAmount?: number;
+  heuristicVelocityCluster?: number;
 };
 
 export interface SyncResult {
@@ -92,6 +111,10 @@ export interface SyncResult {
   skipped: number;
   total: number;
   breakdown?: SyncResultBreakdown;
+}
+
+export interface ResetResult {
+  ok: boolean;
 }
 
 /**

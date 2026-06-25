@@ -194,6 +194,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /user/reset:
+    post:
+      operationId: resetUser
+      tags: [user]
+      summary: Reset user session (testing utility)
+      description: |
+        Deletes all transactions and resets onboarding state so testers can
+        cleanly switch between AA-mock and CSV-upload ingestion modes.
+        Only safe while a single hardcoded demo user exists — must use
+        authenticated session userId once real auth is added.
+      responses:
+        "200":
+          description: Reset successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResetResult"
+
 
 components:
   schemas:
@@ -230,6 +248,20 @@ components:
         safeLimitPct:
           type: number
 
+    TransactionMetadata:
+      type: object
+      description: Metadata attached by behavioral heuristics — never drives hard categorization
+      properties:
+        isRecurringServiceSuggestion:
+          type: boolean
+          description: "Heuristic #1: early-month large P2P — suggest RENT_BILLS but never auto-apply"
+        suggestedCategoryOnDateHeuristic:
+          type: string
+          description: Category code suggested by the calendar-anchor heuristic
+        isLikelyWeekendCashSwap:
+          type: boolean
+          description: "Heuristic #4: weekend round-number transfer — elevated priority flag in inbox"
+
     Transaction:
       type: object
       required:
@@ -241,6 +273,7 @@ components:
         - categorizationSource
         - isP2p
         - categoryId
+        - metadata
       properties:
         id:
           type: integer
@@ -265,11 +298,23 @@ components:
           type: integer
         categorizationSource:
           type: string
-          enum: [RULE_EXACT, RULE_REGEX, LLM, USER_TAGGED, P2P_UNCATEGORIZED, PENDING]
+          enum:
+            - RULE_EXACT
+            - RULE_REGEX
+            - LLM
+            - USER_TAGGED
+            - P2P_UNCATEGORIZED
+            - PENDING
+            - HEURISTIC_ODD_AMOUNT
+            - HEURISTIC_VELOCITY_CLUSTER
         categorizationConfidence:
           type: ["number", "null"]
         isP2p:
           type: boolean
+        clusterId:
+          type: ["string", "null"]
+        metadata:
+          $ref: "#/components/schemas/TransactionMetadata"
         categoryCode:
           type: ["string", "null"]
         categoryDisplayName:
@@ -329,6 +374,17 @@ components:
               type: integer
             pending:
               type: integer
+            heuristicOddAmount:
+              type: integer
+            heuristicVelocityCluster:
+              type: integer
+
+    ResetResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
 
     UserProfile:
       type: object

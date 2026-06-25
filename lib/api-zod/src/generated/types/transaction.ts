@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TransactionCategorizationSource } from './transactionCategorizationSource';
+import type { TransactionMetadata } from './transactionMetadata';
 import type { TransactionTxnType } from './transactionTxnType';
 
 export interface Transaction {
@@ -25,6 +26,9 @@ export interface Transaction {
   /** @nullable */
   categorizationConfidence?: number | null;
   isP2p: boolean;
+  /** @nullable */
+  clusterId?: string | null;
+  metadata: TransactionMetadata;
   /** @nullable */
   categoryCode?: string | null;
   /** @nullable */

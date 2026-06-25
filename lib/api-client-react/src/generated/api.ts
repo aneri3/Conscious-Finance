@@ -26,6 +26,7 @@ import type {
   ErrorResponse,
   HealthStatus,
   ListTransactionsParams,
+  ResetResult,
   SafeLimitStatus,
   SyncResult,
   Transaction,
@@ -734,5 +735,80 @@ export const useSetupUser = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getSetupUserMutationOptions(options));
+    }
+
+export const getResetUserUrl = () => {
+
+
+
+
+  return `/api/user/reset`
+}
+
+/**
+ * Deletes all transactions and resets onboarding state so testers can
+cleanly switch between AA-mock and CSV-upload ingestion modes.
+Only safe while a single hardcoded demo user exists — must use
+authenticated session userId once real auth is added.
+
+ * @summary Reset user session (testing utility)
+ */
+export const resetUser = async ( options?: RequestInit): Promise<ResetResult> => {
+
+  return customFetch<ResetResult>(getResetUserUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getResetUserMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetUser>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resetUser>>, TError,void, TContext> => {
+
+const mutationKey = ['resetUser'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetUser>>, void> = () => {
+
+
+          return  resetUser(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetUserMutationResult = NonNullable<Awaited<ReturnType<typeof resetUser>>>
+
+    export type ResetUserMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Reset user session (testing utility)
+ */
+export const useResetUser = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetUser>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resetUser>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getResetUserMutationOptions(options));
     }
 

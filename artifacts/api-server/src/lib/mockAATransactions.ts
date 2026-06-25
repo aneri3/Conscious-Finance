@@ -29,25 +29,35 @@ function randomBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/** Date N days ago at a random hour */
 function daysAgo(n: number): Date {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  d.setHours(randomBetween(8, 22), randomBetween(0, 59), randomBetween(0, 59));
+  d.setHours(randomBetween(8, 22), randomBetween(0, 59), randomBetween(0, 59), 0);
   return d;
 }
 
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
+/** Fixed timestamp on a specific day of the CURRENT month at a precise time — needed for heuristic demos */
+function thisMonthAt(day: number, hour: number, minute: number): Date {
+  const d = new Date();
+  d.setDate(day);
+  d.setHours(hour, minute, 0, 0);
+  return d;
 }
 
-function ref(prefix: string, n: number): string {
-  return `${prefix}${pad(n)}${Date.now().toString().slice(-6)}`;
+/** Most recent Saturday at a given hour (for heuristic #4 weekend demo) */
+function lastSaturdayAt(hour: number, minute: number): Date {
+  const d = new Date();
+  const daysToLastSat = (d.getDay() + 1) % 7; // days since Saturday
+  d.setDate(d.getDate() - (daysToLastSat === 0 ? 7 : daysToLastSat));
+  d.setHours(hour, minute, 0, 0);
+  return d;
 }
 
 const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
-  // --- Rule-matched: Swiggy (EXACT_VPA → FOOD_GROCERIES) ---
+  // ---- Rule-matched: Swiggy (EXACT_VPA → FOOD_GROCERIES) ----
   {
-    bankTxnRef: ref("TXN", 1),
+    bankTxnRef: "MOCK-TXN-001",
     amount: 349,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(1),
@@ -56,7 +66,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5812",
   },
   {
-    bankTxnRef: ref("TXN", 2),
+    bankTxnRef: "MOCK-TXN-002",
     amount: 218,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(2),
@@ -65,7 +75,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5812",
   },
   {
-    bankTxnRef: ref("TXN", 3),
+    bankTxnRef: "MOCK-TXN-003",
     amount: 529,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(4),
@@ -74,9 +84,9 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5411",
   },
 
-  // --- Rule-matched: Zomato (EXACT_VPA → FOOD_GROCERIES) ---
+  // ---- Rule-matched: Zomato (EXACT_VPA → FOOD_GROCERIES) ----
   {
-    bankTxnRef: ref("TXN", 4),
+    bankTxnRef: "MOCK-TXN-004",
     amount: 412,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(1),
@@ -85,7 +95,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5812",
   },
   {
-    bankTxnRef: ref("TXN", 5),
+    bankTxnRef: "MOCK-TXN-005",
     amount: 285,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(3),
@@ -94,7 +104,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5812",
   },
   {
-    bankTxnRef: ref("TXN", 6),
+    bankTxnRef: "MOCK-TXN-006",
     amount: 198,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(7),
@@ -103,9 +113,9 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5812",
   },
 
-  // --- Rule-matched: Rapido (EXACT_VPA → TRAVEL_COMMUTE) ---
+  // ---- Rule-matched: Rapido (EXACT_VPA → TRAVEL_COMMUTE) ----
   {
-    bankTxnRef: ref("TXN", 7),
+    bankTxnRef: "MOCK-TXN-007",
     amount: 65,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(1),
@@ -114,7 +124,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "4121",
   },
   {
-    bankTxnRef: ref("TXN", 8),
+    bankTxnRef: "MOCK-TXN-008",
     amount: 89,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(3),
@@ -123,7 +133,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "4121",
   },
   {
-    bankTxnRef: ref("TXN", 9),
+    bankTxnRef: "MOCK-TXN-009",
     amount: 72,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(5),
@@ -131,19 +141,10 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     counterpartyVpa: "rapido@paytm",
     mccCode: "4121",
   },
-  {
-    bankTxnRef: ref("TXN", 10),
-    amount: 55,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(8),
-    rawNarration: "UPI/rapido@paytm/Rapido Ride/RAPIDO",
-    counterpartyVpa: "rapido@paytm",
-    mccCode: "4121",
-  },
 
-  // --- Rule-matched: REGEX electricity/broadband/rent → RENT_BILLS ---
+  // ---- Rule-matched: REGEX electricity/broadband/rent → RENT_BILLS ----
   {
-    bankTxnRef: ref("TXN", 11),
+    bankTxnRef: "MOCK-TXN-010",
     amount: 12000,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(15),
@@ -152,7 +153,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: null,
   },
   {
-    bankTxnRef: ref("TXN", 12),
+    bankTxnRef: "MOCK-TXN-011",
     amount: 1199,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(10),
@@ -161,7 +162,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: null,
   },
   {
-    bankTxnRef: ref("TXN", 13),
+    bankTxnRef: "MOCK-TXN-012",
     amount: 2200,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(12),
@@ -170,9 +171,9 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: null,
   },
 
-  // --- LLM fallback: Myntra → SHOPPING ---
+  // ---- LLM fallback variety ----
   {
-    bankTxnRef: ref("TXN", 14),
+    bankTxnRef: "MOCK-TXN-013",
     amount: 1899,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(2),
@@ -181,7 +182,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5691",
   },
   {
-    bankTxnRef: ref("TXN", 15),
+    bankTxnRef: "MOCK-TXN-014",
     amount: 3299,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(9),
@@ -189,10 +190,8 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     counterpartyVpa: "myntra.bd@hdfcbank",
     mccCode: "5691",
   },
-
-  // --- LLM fallback: BookMyShow → OUTINGS_LEISURE ---
   {
-    bankTxnRef: ref("TXN", 16),
+    bankTxnRef: "MOCK-TXN-015",
     amount: 880,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(6),
@@ -200,10 +199,8 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     counterpartyVpa: "bookmyshow@icicibank",
     mccCode: "7832",
   },
-
-  // --- LLM fallback: Big Basket → FOOD_GROCERIES ---
   {
-    bankTxnRef: ref("TXN", 17),
+    bankTxnRef: "MOCK-TXN-016",
     amount: 2150,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(5),
@@ -212,7 +209,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5411",
   },
   {
-    bankTxnRef: ref("TXN", 18),
+    bankTxnRef: "MOCK-TXN-017",
     amount: 1680,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(13),
@@ -220,10 +217,8 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     counterpartyVpa: "bigbasket@axis",
     mccCode: "5411",
   },
-
-  // --- LLM fallback: Uber → TRAVEL_COMMUTE ---
   {
-    bankTxnRef: ref("TXN", 19),
+    bankTxnRef: "MOCK-TXN-018",
     amount: 234,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(2),
@@ -232,7 +227,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "4121",
   },
   {
-    bankTxnRef: ref("TXN", 20),
+    bankTxnRef: "MOCK-TXN-019",
     amount: 312,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(4),
@@ -241,18 +236,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "4121",
   },
   {
-    bankTxnRef: ref("TXN", 21),
-    amount: 189,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(7),
-    rawNarration: "UPI/uber@paytm/Uber Technologies/UBER",
-    counterpartyVpa: "uber@paytm",
-    mccCode: "4121",
-  },
-
-  // --- LLM fallback: Other merchants ---
-  {
-    bankTxnRef: ref("TXN", 22),
+    bankTxnRef: "MOCK-TXN-020",
     amount: 599,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(3),
@@ -261,7 +245,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5977",
   },
   {
-    bankTxnRef: ref("TXN", 23),
+    bankTxnRef: "MOCK-TXN-021",
     amount: 4499,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(11),
@@ -270,7 +254,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5999",
   },
   {
-    bankTxnRef: ref("TXN", 24),
+    bankTxnRef: "MOCK-TXN-022",
     amount: 1299,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(8),
@@ -279,16 +263,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5999",
   },
   {
-    bankTxnRef: ref("TXN", 25),
-    amount: 549,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(5),
-    rawNarration: "UPI/zepto@hdfcbank/Zepto Groceries/ZEPTO",
-    counterpartyVpa: "zepto@hdfcbank",
-    mccCode: "5411",
-  },
-  {
-    bankTxnRef: ref("TXN", 26),
+    bankTxnRef: "MOCK-TXN-023",
     amount: 799,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(6),
@@ -297,16 +272,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "7994",
   },
   {
-    bankTxnRef: ref("TXN", 27),
-    amount: 199,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(4),
-    rawNarration: "UPI/spotify@hdfc/Spotify Premium/SPOTIFY",
-    counterpartyVpa: "spotify@hdfc",
-    mccCode: "7929",
-  },
-  {
-    bankTxnRef: ref("TXN", 28),
+    bankTxnRef: "MOCK-TXN-024",
     amount: 1200,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(14),
@@ -315,103 +281,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "7941",
   },
   {
-    bankTxnRef: ref("TXN", 29),
-    amount: 320,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(9),
-    rawNarration: "UPI/swiggy@axisbank/Swiggy Food/SWIGGY",
-    counterpartyVpa: "swiggy@axisbank",
-    mccCode: "5812",
-  },
-  {
-    bankTxnRef: ref("TXN", 30),
-    amount: 450,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(10),
-    rawNarration: "UPI/zomato@icici/Zomato Order/ZOMATO",
-    counterpartyVpa: "zomato@icici",
-    mccCode: "5812",
-  },
-
-  // --- P2P transfers (personal VPAs, no MCC, UPI phone format) ---
-  {
-    bankTxnRef: ref("TXN", 31),
-    amount: 2000,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(2),
-    rawNarration: "UPI/9876543210/Ramesh Kumar/payment",
-    counterpartyVpa: "9876543210@ybl",
-    mccCode: null,
-  },
-  {
-    bankTxnRef: ref("TXN", 32),
-    amount: 500,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(4),
-    rawNarration: "UPI/8765432109/Priya Sharma/dinner split",
-    counterpartyVpa: "priya.sharma99@paytm",
-    mccCode: null,
-  },
-  {
-    bankTxnRef: ref("TXN", 33),
-    amount: 1500,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(7),
-    rawNarration: "UPI/9988776655/Ankit Gupta/rent share",
-    counterpartyVpa: "9988776655@apl",
-    mccCode: null,
-  },
-  {
-    bankTxnRef: ref("TXN", 34),
-    amount: 300,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(9),
-    rawNarration: "UPI/7654321098/Kavya Nair/movie tickets",
-    counterpartyVpa: "kavya.nair@axl",
-    mccCode: null,
-  },
-  {
-    bankTxnRef: ref("TXN", 35),
-    amount: 800,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(13),
-    rawNarration: "UPI/8899001122/Vikram Singh/grocery split",
-    counterpartyVpa: "8899001122@ybl",
-    mccCode: null,
-  },
-
-  // --- CREDIT transactions (salary, refund — excluded from Safe Limit calc) ---
-  {
-    bankTxnRef: ref("TXN", 36),
-    amount: 80000,
-    txnType: "CREDIT",
-    txnTimestamp: daysAgo(15),
-    rawNarration: "NEFT/TECHCORP/Salary June 2026/TECHCORP SOLUTIONS",
-    counterpartyVpa: null,
-    mccCode: null,
-  },
-  {
-    bankTxnRef: ref("TXN", 37),
-    amount: 1899,
-    txnType: "CREDIT",
-    txnTimestamp: daysAgo(8),
-    rawNarration: "UPI/myntra.bd@hdfcbank/Myntra Refund/MYNTRA",
-    counterpartyVpa: "myntra.bd@hdfcbank",
-    mccCode: null,
-  },
-  {
-    bankTxnRef: ref("TXN", 38),
-    amount: 529,
-    txnType: "CREDIT",
-    txnTimestamp: daysAgo(6),
-    rawNarration: "UPI/swiggy@axisbank/Swiggy Refund/SWIGGY",
-    counterpartyVpa: "swiggy@axisbank",
-    mccCode: null,
-  },
-
-  // --- More LLM fallback variety ---
-  {
-    bankTxnRef: ref("TXN", 39),
+    bankTxnRef: "MOCK-TXN-025",
     amount: 2499,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(11),
@@ -420,43 +290,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5691",
   },
   {
-    bankTxnRef: ref("TXN", 40),
-    amount: 399,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(12),
-    rawNarration: "UPI/dunzo@hdfcbank/Dunzo Delivery/DUNZO",
-    counterpartyVpa: "dunzo@hdfcbank",
-    mccCode: "5411",
-  },
-  {
-    bankTxnRef: ref("TXN", 41),
-    amount: 1499,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(14),
-    rawNarration: "UPI/lenskart@icici/Lenskart Eyewear/LENSKART",
-    counterpartyVpa: "lenskart@icici",
-    mccCode: "5995",
-  },
-  {
-    bankTxnRef: ref("TXN", 42),
-    amount: 650,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(3),
-    rawNarration: "UPI/zomato@icici/Zomato Order/ZOMATO",
-    counterpartyVpa: "zomato@icici",
-    mccCode: "5812",
-  },
-  {
-    bankTxnRef: ref("TXN", 43),
-    amount: 125,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(1),
-    rawNarration: "UPI/rapido@paytm/Rapido Ride/RAPIDO",
-    counterpartyVpa: "rapido@paytm",
-    mccCode: "4121",
-  },
-  {
-    bankTxnRef: ref("TXN", 44),
+    bankTxnRef: "MOCK-TXN-026",
     amount: 4999,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(10),
@@ -465,7 +299,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "5732",
   },
   {
-    bankTxnRef: ref("TXN", 45),
+    bankTxnRef: "MOCK-TXN-027",
     amount: 850,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(16),
@@ -474,7 +308,7 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     mccCode: "7832",
   },
   {
-    bankTxnRef: ref("TXN", 46),
+    bankTxnRef: "MOCK-TXN-028",
     amount: 3200,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(6),
@@ -482,131 +316,127 @@ const CURRENT_MONTH_TRANSACTIONS: RawAATransaction[] = [
     counterpartyVpa: "makemytrip@icici",
     mccCode: "4722",
   },
+
+  // ---- CREDIT (salary, refunds — excluded from Safe Limit) ----
   {
-    bankTxnRef: ref("TXN", 47),
-    amount: 2800,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(8),
-    rawNarration: "UPI/swiggy@axisbank/Swiggy Instamart/SWIGGY",
-    counterpartyVpa: "swiggy@axisbank",
-    mccCode: "5411",
-  },
-  {
-    bankTxnRef: ref("TXN", 48),
-    amount: 1750,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(3),
-    rawNarration: "UPI/pharmeasy@hdfcbank/PharmEasy Medicine/PHARMEASY",
-    counterpartyVpa: "pharmeasy@hdfcbank",
-    mccCode: "5912",
-  },
-  {
-    bankTxnRef: ref("TXN", 49),
-    amount: 6000,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(17),
-    rawNarration: "NACH/HDFC/electricity bill payment/MSEDCL",
+    bankTxnRef: "MOCK-TXN-029",
+    amount: 80000,
+    txnType: "CREDIT",
+    txnTimestamp: daysAgo(15),
+    rawNarration: "NEFT/TECHCORP/Salary June 2026/TECHCORP SOLUTIONS",
     counterpartyVpa: null,
     mccCode: null,
   },
   {
-    bankTxnRef: ref("TXN", 50),
-    amount: 299,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(5),
-    rawNarration: "UPI/prime@amazon/Amazon Prime/AMAZON",
-    counterpartyVpa: "prime@amazon",
-    mccCode: "7929",
+    bankTxnRef: "MOCK-TXN-030",
+    amount: 1899,
+    txnType: "CREDIT",
+    txnTimestamp: daysAgo(8),
+    rawNarration: "UPI/myntra.bd@hdfcbank/Myntra Refund/MYNTRA",
+    counterpartyVpa: "myntra.bd@hdfcbank",
+    mccCode: null,
   },
+
+  // ---- Regular P2P (structural detection → P2P_UNCATEGORIZED) ----
   {
-    bankTxnRef: ref("TXN", 51),
-    amount: 1100,
+    bankTxnRef: "MOCK-TXN-031",
+    amount: 500,
     txnType: "DEBIT",
-    txnTimestamp: daysAgo(7),
-    rawNarration: "UPI/7788990011/Sneha Pillai/flat maintenance",
-    counterpartyVpa: "7788990011@ybl",
+    txnTimestamp: daysAgo(4),
+    rawNarration: "UPI/8765432109/Priya Sharma/dinner split",
+    counterpartyVpa: "priya.sharma99@paytm",
     mccCode: null,
   },
   {
-    bankTxnRef: ref("TXN", 52),
-    amount: 600,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(4),
-    rawNarration: "UPI/zomato@icici/Zomato Pro Order/ZOMATO",
-    counterpartyVpa: "zomato@icici",
-    mccCode: "5812",
-  },
-  {
-    bankTxnRef: ref("TXN", 53),
-    amount: 420,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(9),
-    rawNarration: "UPI/swiggy@axisbank/Swiggy Food/SWIGGY",
-    counterpartyVpa: "swiggy@axisbank",
-    mccCode: "5812",
-  },
-  {
-    bankTxnRef: ref("TXN", 54),
-    amount: 145,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(2),
-    rawNarration: "UPI/rapido@paytm/Rapido Ride/RAPIDO",
-    counterpartyVpa: "rapido@paytm",
-    mccCode: "4121",
-  },
-  {
-    bankTxnRef: ref("TXN", 55),
-    amount: 2100,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(11),
-    rawNarration: "UPI/nykaa@razorpay/Nykaa Fashion/NYKAA",
-    counterpartyVpa: "nykaa@razorpay",
-    mccCode: "5977",
-  },
-  {
-    bankTxnRef: ref("TXN", 56),
-    amount: 3800,
+    bankTxnRef: "MOCK-TXN-032",
+    amount: 800,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(13),
-    rawNarration: "UPI/uber@paytm/Uber Technologies/UBER",
-    counterpartyVpa: "uber@paytm",
-    mccCode: "4121",
+    rawNarration: "UPI/8899001122/Vikram Singh/grocery split",
+    counterpartyVpa: "8899001122@ybl",
+    mccCode: null,
   },
+
+  // ============================================================
+  // HEURISTIC DEMO TRANSACTIONS
+  // ============================================================
+
+  // ---- Heuristic #1: Staff/Services (early-month large P2P → RENT_BILLS suggestion) ----
+  // Day 2 of this month, ₹3000 — triggers calendar-anchor hint (isRecurringServiceSuggestion)
+  // but does NOT auto-apply RENT_BILLS. User must confirm in inbox.
   {
-    bankTxnRef: ref("TXN", 57),
-    amount: 950,
+    bankTxnRef: "MOCK-TXN-H1-MAID",
+    amount: 3000,
     txnType: "DEBIT",
-    txnTimestamp: daysAgo(6),
-    rawNarration: "UPI/bigbasket@axis/BigBasket Groceries/BBT",
-    counterpartyVpa: "bigbasket@axis",
-    mccCode: "5411",
+    txnTimestamp: thisMonthAt(2, 9, 15),
+    rawNarration: "UPI/9123456780/Savitri Devi/maid payment",
+    counterpartyVpa: "9123456780@ybl",
+    mccCode: null,
   },
+
+  // ---- Heuristic #2: Odd-amount auto fare (auto-categorize → TRAVEL_COMMUTE) ----
+  // Amount ₹83 — P2P DEBIT, non-round, < ₹300. Auto-tagged as TRAVEL_COMMUTE.
   {
-    bankTxnRef: ref("TXN", 58),
-    amount: 1600,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(14),
-    rawNarration: "UPI/pharmeasy@hdfcbank/Pharmeasy Order/PHARMEASY",
-    counterpartyVpa: "pharmeasy@hdfcbank",
-    mccCode: "5912",
-  },
-  {
-    bankTxnRef: ref("TXN", 59),
-    amount: 780,
-    txnType: "DEBIT",
-    txnTimestamp: daysAgo(8),
-    rawNarration: "UPI/myntra.bd@hdfcbank/Myntra Purchase/MYNTRA",
-    counterpartyVpa: "myntra.bd@hdfcbank",
-    mccCode: "5691",
-  },
-  {
-    bankTxnRef: ref("TXN", 60),
-    amount: 490,
+    bankTxnRef: "MOCK-TXN-H2-AUTO1",
+    amount: 83,
     txnType: "DEBIT",
     txnTimestamp: daysAgo(3),
-    rawNarration: "UPI/uber@paytm/Uber Technologies/UBER",
-    counterpartyVpa: "uber@paytm",
-    mccCode: "4121",
+    rawNarration: "UPI/9876543210/Ramesh Auto/auto fare",
+    counterpartyVpa: "9876543210@ybl",
+    mccCode: null,
+  },
+  // Amount ₹127 — same pattern, different ride
+  {
+    bankTxnRef: "MOCK-TXN-H2-AUTO2",
+    amount: 127,
+    txnType: "DEBIT",
+    txnTimestamp: daysAgo(6),
+    rawNarration: "UPI/9988112233/Suresh Kumar/auto fare office",
+    counterpartyVpa: "9988112233@ybl",
+    mccCode: null,
+  },
+
+  // ---- Heuristic #3: Velocity cluster ("Chai-Tapri" outing) ----
+  // Three micro-debits < ₹100 within 90 minutes of each other → clustered
+  // Fixed times: 4:00 PM, 4:28 PM, 5:03 PM — all within 90 min of anchor (4:00 PM)
+  {
+    bankTxnRef: "MOCK-TXN-H3-CHAI1",
+    amount: 50, // round — does NOT trigger heuristic #2, stays P2P_UNCATEGORIZED for clustering
+    txnType: "DEBIT",
+    txnTimestamp: thisMonthAt(22, 16, 0),
+    rawNarration: "UPI/7700112233/Sharma Tea Stall/chai",
+    counterpartyVpa: "7700112233@paytm",
+    mccCode: null,
+  },
+  {
+    bankTxnRef: "MOCK-TXN-H3-CHAI2",
+    amount: 60, // round — does NOT trigger heuristic #2, stays P2P_UNCATEGORIZED for clustering
+    txnType: "DEBIT",
+    txnTimestamp: thisMonthAt(22, 16, 28),
+    rawNarration: "UPI/8811223344/Raju Snacks/vada pav",
+    counterpartyVpa: "8811223344@ybl",
+    mccCode: null,
+  },
+  {
+    bankTxnRef: "MOCK-TXN-H3-CHAI3",
+    amount: 40, // round — does NOT trigger heuristic #2, stays P2P_UNCATEGORIZED for clustering
+    txnType: "DEBIT",
+    txnTimestamp: thisMonthAt(22, 17, 3),
+    rawNarration: "UPI/9922334455/Ganesh Paan/paan",
+    counterpartyVpa: "9922334455@ybl",
+    mccCode: null,
+  },
+
+  // ---- Heuristic #4: Weekend round-number (UI flag only — isLikelyWeekendCashSwap) ----
+  // Saturday, ₹2000 round number — flags as likely weekend cash swap in inbox
+  {
+    bankTxnRef: "MOCK-TXN-H4-WKND",
+    amount: 2000,
+    txnType: "DEBIT",
+    txnTimestamp: lastSaturdayAt(20, 30),
+    rawNarration: "UPI/9876000001/Rahul Mehta/cash",
+    counterpartyVpa: "9876000001@ybl",
+    mccCode: null,
   },
 ];
 

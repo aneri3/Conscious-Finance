@@ -1,17 +1,41 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, List, Inbox } from "lucide-react";
-import { useListTransactions, getListTransactionsQueryKey } from "@workspace/api-client-react";
+import { LayoutDashboard, List, Inbox, LogOut } from "lucide-react";
+import {
+  useListTransactions,
+  getListTransactionsQueryKey,
+  useResetUser,
+  getGetUserProfileQueryKey,
+} from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const queryClient = useQueryClient();
 
   const { data: inboxTransactions } = useListTransactions(
     { uncategorizedOnly: true },
     { query: { queryKey: getListTransactionsQueryKey({ uncategorizedOnly: true }) } }
   );
-  
+
   const inboxCount = inboxTransactions?.length || 0;
+
+  const resetMutation = useResetUser({
+    mutation: {
+      onSuccess: async () => {
+        // Wipe all cached data so the app re-fetches from scratch
+        await queryClient.invalidateQueries();
+        // Re-fetch profile — it will now return isOnboarded: false,
+        // which drops the user back onto the onboarding wizard
+        await queryClient.refetchQueries({ queryKey: getGetUserProfileQueryKey() });
+      },
+    },
+  });
+
+  const handleReset = () => {
+    if (resetMutation.isPending) return;
+    resetMutation.mutate();
+  };
 
   const navItems = [
     { href: "/", label: "Home", icon: LayoutDashboard },
@@ -58,7 +82,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <span className="font-display font-semibold text-lg tracking-tight">Conscious</span>
         </div>
-        
+
         <div className="flex flex-col gap-2">
           {navItems.map((item) => {
             const isActive = location === item.href;
@@ -78,6 +102,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+        </div>
+
+        {/* Reset / Switch Mode — testing utility, prominently placed */}
+        <div className="mt-auto pt-6 border-t border-border">
+          <button
+            onClick={handleReset}
+            disabled={resetMutation.isPending}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              "text-muted-foreground hover:bg-destructive/10 hover:text-destructive",
+              resetMutation.isPending && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            <LogOut className="h-5 w-5" />
+            {resetMutation.isPending ? "Resetting…" : "Logout / Switch Mode"}
+          </button>
         </div>
       </nav>
 

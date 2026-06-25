@@ -2,9 +2,8 @@ import { Router, type IRouter } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { transactionsTable, categoriesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 import { parseBankCsv } from "../lib/csvIngestionPipeline";
-import { categorizeTransaction, invalidateRuleCache } from "../lib/categorizationEngine";
+import { categorizeBatch, invalidateRuleCache } from "../lib/categorizationEngine";
 
 const router: IRouter = Router();
 
@@ -51,20 +50,20 @@ router.post(
       return;
     }
 
-    // Load category map
+    // Run the full shared categorization pipeline (rules → P2P → heuristics #1/#2/#4 → LLM → clustering #3)
     invalidateRuleCache();
     const allCategories = await db.select().from(categoriesTable);
     const categoryMap = new Map<string, number>(allCategories.map((c) => [c.code, c.id]));
     const uncategorizedId = categoryMap.get("UNCATEGORIZED")!;
 
+    const categorized = await categorizeBatch(transactions);
+
     let totalRowsIngested = 0;
     let duplicatesSkipped = 0;
     const rowErrors: Array<{ rowIndex: number; reason: string }> = [...parseErrors];
 
-    for (let i = 0; i < transactions.length; i++) {
-      const raw = transactions[i];
-
-      const categorization = await categorizeTransaction(raw);
+    for (let i = 0; i < categorized.length; i++) {
+      const { txn: raw, result: categorization } = categorized[i];
       const categoryId = categoryMap.get(categorization.categoryCode) ?? uncategorizedId;
 
       try {
@@ -84,6 +83,8 @@ router.post(
             categorizationConfidence:
               categorization.confidence != null ? String(categorization.confidence) : undefined,
             isP2p: categorization.isP2p,
+            clusterId: categorization.clusterId ?? undefined,
+            metadata: categorization.metadata,
           })
           .onConflictDoNothing()
           .returning({ id: transactionsTable.id });

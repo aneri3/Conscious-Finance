@@ -1,0 +1,268 @@
+# Extend: Indian P2P Behavioral Heuristics + Session Reset Utility
+
+## Context
+
+The "Conscious Spending" MVP is already fully operational — Postgres
+schema, onboarding wizard, the three-tier categorization engine (rules →
+P2P structural detection → mocked LLM fallback), and both ingestion paths
+(AA mock sync, CSV upload) all exist and work.
+
+This is an **incremental extension**, not a rebuild. Reuse the existing
+categorization service, existing types, and existing DB connection setup.
+Do not regenerate files that already work — add to them.
+
+## What's changing
+
+1. Four India-specific behavioral heuristics layered onto the existing
+   structural P2P detector, to recover signal about *why* a peer transfer
+   happened from timing and amount patterns.
+2. A velocity-clustering pass that groups rapid small P2P debits into a
+   single grouped unit for the quick-tag inbox.
+3. A "Logout / Switch Mode" reset utility so testers can cleanly switch
+   between AA-mock and CSV-upload testing without old data interfering.
+
+## Important: two of these four heuristics are intentionally NOT what a
+## literal reading of "auto-categorize" would suggest. Read this before
+## building anything.
+
+**Heuristic #1 (early-month large P2P transfer) must NOT silently assign a
+category.** "P2P debit ≥ ₹1,500 in the first 7 days of the month" sounds
+like a maid/staff payment, but it fires identically for a flight cost
+split, a security deposit, a one-off reimbursement, or any large transfer
+that happens to land early in the month — there is no actual behavioral
+specificity in date-range-plus-threshold alone. Auto-assigning a category
+on a signal this weak would silently move money into RENT_BILLS that may
+not belong there, which corrupts the Safe Limit number this entire app
+exists to make trustworthy. **Implement this as a suggestion only**: attach
+metadata (`isRecurringServiceSuggestion: true`,
+`suggestedCategoryOnDateHeuristic: "RENT_BILLS"`) to the transaction, but
+leave its actual category as UNCATEGORIZED/P2P_UNCATEGORIZED. The frontend
+quick-tag inbox displays the suggestion as a pre-filled hint with one-tap
+confirm — the user still taps to apply it, it's never applied for them
+silently.
+
+**Heuristic #4 (weekend round-number high-value transfer) stays
+UNCATEGORIZED by design** — this one already matches the original spec
+correctly, just confirming it explicitly: do not let this auto-assign a
+category either. It's a UI flag only.
+
+**Heuristics #2 (odd-amount → travel) and #3 (velocity cluster) DO
+auto-categorize/auto-group**, since they're structurally specific enough to
+warrant it. Still, flag clearly in code comments (not just this prompt)
+that bypassing the quick-tag inbox entirely on heuristic #2 is a tunable
+decision worth revisiting once there's real usage data — a few visibly
+wrong auto-categorizations will erode user trust fast on a product whose
+whole pitch is trustworthy awareness.
+
+## 1. Backend: the four heuristics
+
+All four operate on transactions that have already passed through the
+existing rule engine (no match) and the existing structural P2P detector
+(flagged as P2P). They run as an additional step after that, before any
+LLM fallback — these are P2P-specific refinements, not fallback
+categorization for things the rules don't know.
+
+**Heuristic #1 — Staff & Services (calendar anchor, suggestion only):**
+- Condition: `txn.type === "DEBIT"`, day-of-month between 1 and 7
+  inclusive, `amount >= 1500`
+- Action: attach `metadata.isRecurringServiceSuggestion = true` and
+  `metadata.suggestedCategoryOnDateHeuristic = "RENT_BILLS"`. Category
+  and categorization_source remain whatever the structural P2P check
+  already set (UNCATEGORIZED / P2P_UNCATEGORIZED) — do not change them.
+
+**Heuristic #2 — Ride-hailing odd-amount pivot (auto-categorize):**
+- Condition: `txn.type === "DEBIT"`, `0 < amount < 300`,
+  `amount % 10 !== 0 AND amount % 5 !== 0`
+- Action: set `categoryCode = "TRAVEL_COMMUTE"`,
+  `categorizationSource = "HEURISTIC_ODD_AMOUNT"`. This transaction does
+  NOT appear in the quick-tag inbox (it's no longer UNCATEGORIZED).
+- Priority: check this heuristic FIRST among the four, since it's the
+  only one that changes the actual category — if it fires, skip
+  evaluating heuristics #1 and #4 for that transaction (they're both
+  suggestion/flag-only and only meaningful for transactions still sitting
+  in UNCATEGORIZED).
+
+**Heuristic #3 — "Chai-Tapri" velocity cluster (auto-group, separate
+batch-level pass):**
+- This one is fundamentally different from the other three: it can't be
+  decided per-transaction, since "did 2+ micro-debits happen within 90
+  minutes of each other" requires comparing a transaction against its
+  neighbors across the whole sync/upload batch. Implement it as a second
+  pass that runs AFTER every transaction in the batch has already gone
+  through rules → P2P detection → heuristics #1/#2/#4 — only transactions
+  that are still P2P AND still UNCATEGORIZED at that point are clustering
+  candidates (don't pull in something heuristic #2 already
+  auto-categorized).
+- Algorithm: sort candidates chronologically. Walk through in order; a
+  transaction joins the currently-open cluster if it's within 90 minutes
+  of the FIRST transaction in that cluster (not the most recent one —
+  using "most recent" would let a cluster drift arbitrarily long since
+  each new transaction would extend the window further, which doesn't
+  match the "single sitting" pattern this is meant to catch). Only treat
+  a group of 2 or more as an actual cluster; a single isolated micro-debit
+  is just a normal small transaction.
+- Condition for cluster eligibility: `amount < 100`, `type === "DEBIT"`.
+- Action: assign every member the same `cluster_id` and set
+  `categorizationSource = "HEURISTIC_VELOCITY_CLUSTER"`. **Critical
+  requirement**: `cluster_id` must be deterministic — derive it by hashing
+  the sorted list of member transaction references (e.g. SHA-256 of their
+  joined `bank_txn_ref`s, truncated), NOT a random UUID and NOT based on
+  current timestamp. If it's non-deterministic, re-running a sync or
+  re-uploading a CSV would assign a *different* cluster_id to transactions
+  that already exist in the DB on every re-run, silently breaking the
+  frontend's grouped-card display each time. Verify this explicitly:
+  running the same batch through clustering twice must produce identical
+  cluster_ids both times.
+- These transactions count toward the Safe Limit immediately, same as any
+  other DEBIT — clustering is a display/UX grouping, not an exclusion.
+
+**Heuristic #4 — Scanner-down weekend cash swap (UI flag only):**
+- Condition: `txn.type === "DEBIT"`, timestamp falls between Friday 18:00
+  and Sunday 23:59 (inclusive), `amount >= 1000`, `amount % 100 === 0`
+- Action: attach `metadata.isLikelyWeekendCashSwap = true`. Category and
+  categorization_source remain unchanged (UNCATEGORIZED / PENDING per the
+  existing structural P2P result) — this is a flag for the UI to surface
+  with elevated visual priority in the quick-tag inbox, not a category
+  assignment.
+
+## 2. Database changes
+
+```sql
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_categorization_source_check;
+ALTER TABLE transactions ADD CONSTRAINT transactions_categorization_source_check
+    CHECK (categorization_source IN (
+        'PENDING', 'RULE_EXACT', 'RULE_REGEX', 'LLM', 'USER_TAGGED',
+        'P2P_UNCATEGORIZED', 'HEURISTIC_ODD_AMOUNT', 'HEURISTIC_VELOCITY_CLUSTER'
+    ));
+
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS cluster_id TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+CREATE INDEX IF NOT EXISTS idx_transactions_cluster_id
+    ON transactions(user_id, cluster_id)
+    WHERE cluster_id IS NOT NULL;
+```
+
+Run this as a migration against the existing database — do not attempt to
+recreate the `transactions` table from scratch.
+
+## 3. Backend: integrate into both ingestion paths
+
+Both the AA mock sync endpoint and the CSV upload endpoint must run
+transactions through this extended pipeline identically — there should be
+exactly ONE categorization code path both ingestion sources call, never
+two parallel implementations. If the existing categorization service
+currently only exposes a single-transaction function, add a batch-level
+entrypoint that:
+1. Runs every transaction through rules → P2P detection → heuristics
+   #1/#2/#4 → LLM fallback (existing order, heuristics inserted right
+   after P2P detection, before LLM)
+2. Then runs the velocity-clustering second pass (heuristic #3) across
+   the transactions that are still P2P + UNCATEGORIZED after step 1
+3. Upserts everything with the existing `ON CONFLICT (bank_txn_ref) DO
+   NOTHING` protection, completely unchanged from the current
+   implementation — this still must never overwrite a user's manual
+   quick-tag work.
+
+## 4. Backend: session reset endpoint
+
+**`POST /api/user/reset`**
+
+⚠️ Before building this, understand why it's acceptable here and where the
+line is: this endpoint deletes the demo user's entire transaction history
+and clears their onboarding profile back to unset. That is only safe
+because this app currently has exactly one hardcoded demo user and no real
+authentication. Put a comment directly in the route file stating that the
+moment real multi-user auth is added, this endpoint must resolve `userId`
+from an authenticated session — never trust a client-supplied user ID for
+a destructive operation like this again after that point.
+
+Behavior:
+- Delete ALL of the user's rows from `transactions` (not a partial
+  delete filtered by ingestion mode — a clean full reset is what testers
+  actually want when switching modes, and partial deletion risks leaving
+  orphaned cluster_id groups behind)
+- Reset `monthly_income` to NULL and `data_source_mode` to NULL on the
+  user row (reset `safe_limit_pct` back to the schema default, 40.00,
+  since re-onboarding will overwrite it anyway)
+- Respond 200 on success
+
+## 5. Frontend: "Logout / Switch Mode" button
+
+Add a clearly visible button in the app header/nav (not buried in a
+settings menu — this is a testing utility used often during development).
+On click:
+1. POST to `/api/user/reset`
+2. Clear any cached local state (profile, transaction list, Safe Limit)
+3. Re-fetch `/api/user/profile`, which will now return `isOnboarded: false`
+4. This naturally drops the user back onto the onboarding wizard, since
+   the existing onboarding-block logic already keys off `isOnboarded`
+
+No new onboarding logic needed here — this just needs to correctly trigger
+the existing block/unblock behavior that already exists from the prior
+onboarding extension.
+
+## 6. Frontend: Quick-Tag Inbox changes
+
+Two changes to the existing quick-tag inbox screen:
+
+**Clustered transactions display as ONE stacked card, not N separate
+rows.** When fetching the uncategorized list, group any transactions that
+share a non-null `cluster_id` into a single card showing: total combined
+amount, the time range it spans (e.g. "4:00–5:15 PM"), and a count badge
+("3 small payments"). Tapping a category button on this card applies that
+category to ALL transactions in the cluster in one action — this is the
+whole point of clustering, a fast bulk tag instead of three separate taps
+for what was really one outing.
+
+**Heuristic #1 suggestions show as a pre-filled hint, not an auto-applied
+tag.** For any transaction with `metadata.isRecurringServiceSuggestion ===
+true`, show its existing category buttons as normal, but visually
+highlight/pre-select the `RENT_BILLS` button with a small sub-label like
+"Presumed monthly service/staff payment based on date — tap to confirm or
+choose another." The user still has to tap something; nothing is silently
+applied on their behalf.
+
+**Heuristic #4 flags show as a high-priority visual indicator.** For any
+transaction with `metadata.isLikelyWeekendCashSwap === true`, give it a
+distinct visual treatment in the list (e.g. a small badge or accent
+border) so it stands out among the rest of the uncategorized backlog —
+this is meant to catch the user's attention as "probably a notable
+weekend spend," not to assign any category for them.
+
+## Build order
+
+1. Run the database migration, confirm the existing app still works
+   unaffected (no schema break for existing rows — `cluster_id` defaults
+   to NULL, `metadata` defaults to `{}`)
+2. Build heuristics #1, #2, #4 as pure functions operating on a single
+   transaction, unit-test each condition's boundary explicitly (e.g. day 7
+   vs day 8, amount exactly 1500 vs 1499, amount exactly 300 vs 299, a
+   round amount like 150 that should NOT trigger #2 since `150 % 10 ===
+   0`)
+3. Wire #1/#2/#4 into the existing per-transaction categorization
+   function, immediately after the existing P2P structural check —
+   confirm heuristic #2 actually changes the category and the other two
+   only attach metadata
+4. Build the velocity-clustering function as a separate batch-level
+   function, test it explicitly with: 3 micro-debits inside the 90-minute
+   window (should cluster), a 4th micro-debit just outside the window
+   (should NOT join), and confirm running the exact same batch through
+   clustering twice produces identical cluster_ids both times
+5. Build the batch-level entrypoint that chains steps 3 and 4, and switch
+   both the AA mock sync endpoint and the CSV upload endpoint to call this
+   single shared entrypoint rather than maintaining separate logic
+6. Build `POST /api/user/reset`, test that it actually clears transactions
+   and resets the profile, and that a subsequent profile fetch returns
+   `isOnboarded: false`
+7. Build the "Logout / Switch Mode" frontend button and confirm the full
+   loop: click → reset → onboarding wizard reappears → re-onboarding with
+   the other mode works cleanly with no leftover transactions from before
+8. Build the quick-tag inbox UI changes: clustered stacked card with
+   bulk-tag, the heuristic #1 pre-filled suggestion treatment, and the
+   heuristic #4 visual flag
+
+Confirm each step works before moving to the next. Do not skip the
+explicit determinism check in step 4 or the boundary-condition tests in
+step 2 — both are easy to get subtly wrong in ways that only show up with
+specific inputs, not in a quick smoke test.

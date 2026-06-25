@@ -52,9 +52,15 @@ export const ListTransactionsResponseItem = zod.object({
   "counterpartyVpa": zod.string().nullish(),
   "mccCode": zod.string().nullish(),
   "categoryId": zod.number(),
-  "categorizationSource": zod.enum(['RULE_EXACT', 'RULE_REGEX', 'LLM', 'USER_TAGGED', 'P2P_UNCATEGORIZED', 'PENDING']),
+  "categorizationSource": zod.enum(['RULE_EXACT', 'RULE_REGEX', 'LLM', 'USER_TAGGED', 'P2P_UNCATEGORIZED', 'PENDING', 'HEURISTIC_ODD_AMOUNT', 'HEURISTIC_VELOCITY_CLUSTER']),
   "categorizationConfidence": zod.number().nullish(),
   "isP2p": zod.boolean(),
+  "clusterId": zod.string().nullish(),
+  "metadata": zod.object({
+  "isRecurringServiceSuggestion": zod.boolean().optional().describe('Heuristic #1: early-month large P2P — suggest RENT_BILLS but never auto-apply'),
+  "suggestedCategoryOnDateHeuristic": zod.string().optional().describe('Category code suggested by the calendar-anchor heuristic'),
+  "isLikelyWeekendCashSwap": zod.boolean().optional().describe('Heuristic #4: weekend round-number transfer — elevated priority flag in inbox')
+}).describe('Metadata attached by behavioral heuristics — never drives hard categorization'),
   "categoryCode": zod.string().nullish(),
   "categoryDisplayName": zod.string().nullish()
 })
@@ -84,9 +90,15 @@ export const TagTransactionCategoryResponse = zod.object({
   "counterpartyVpa": zod.string().nullish(),
   "mccCode": zod.string().nullish(),
   "categoryId": zod.number(),
-  "categorizationSource": zod.enum(['RULE_EXACT', 'RULE_REGEX', 'LLM', 'USER_TAGGED', 'P2P_UNCATEGORIZED', 'PENDING']),
+  "categorizationSource": zod.enum(['RULE_EXACT', 'RULE_REGEX', 'LLM', 'USER_TAGGED', 'P2P_UNCATEGORIZED', 'PENDING', 'HEURISTIC_ODD_AMOUNT', 'HEURISTIC_VELOCITY_CLUSTER']),
   "categorizationConfidence": zod.number().nullish(),
   "isP2p": zod.boolean(),
+  "clusterId": zod.string().nullish(),
+  "metadata": zod.object({
+  "isRecurringServiceSuggestion": zod.boolean().optional().describe('Heuristic #1: early-month large P2P — suggest RENT_BILLS but never auto-apply'),
+  "suggestedCategoryOnDateHeuristic": zod.string().optional().describe('Category code suggested by the calendar-anchor heuristic'),
+  "isLikelyWeekendCashSwap": zod.boolean().optional().describe('Heuristic #4: weekend round-number transfer — elevated priority flag in inbox')
+}).describe('Metadata attached by behavioral heuristics — never drives hard categorization'),
   "categoryCode": zod.string().nullish(),
   "categoryDisplayName": zod.string().nullish()
 })
@@ -130,7 +142,9 @@ export const SyncTransactionsResponse = zod.object({
   "ruleMatched": zod.number().optional(),
   "p2pDetected": zod.number().optional(),
   "llmClassified": zod.number().optional(),
-  "pending": zod.number().optional()
+  "pending": zod.number().optional(),
+  "heuristicOddAmount": zod.number().optional(),
+  "heuristicVelocityCluster": zod.number().optional()
 }).optional()
 })
 
@@ -166,6 +180,19 @@ export const SetupUserResponse = zod.object({
   "safeLimitPct": zod.number(),
   "dataSourceMode": zod.union([zod.literal('AA_MOCK'),zod.literal('CSV_UPLOAD'),zod.literal(null)]).nullish(),
   "isOnboarded": zod.boolean()
+})
+
+
+/**
+ * Deletes all transactions and resets onboarding state so testers can
+cleanly switch between AA-mock and CSV-upload ingestion modes.
+Only safe while a single hardcoded demo user exists — must use
+authenticated session userId once real auth is added.
+
+ * @summary Reset user session (testing utility)
+ */
+export const ResetUserResponse = zod.object({
+  "ok": zod.boolean()
 })
 
 

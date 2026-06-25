@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { transactionsTable, categoriesTable } from "@workspace/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import {
   ListTransactionsQueryParams,
   TagTransactionCategoryBody,
@@ -45,6 +45,8 @@ router.get("/transactions", async (req, res): Promise<void> => {
       categorizationSource: transactionsTable.categorizationSource,
       categorizationConfidence: transactionsTable.categorizationConfidence,
       isP2p: transactionsTable.isP2p,
+      clusterId: transactionsTable.clusterId,
+      metadata: transactionsTable.metadata,
       categoryCode: categoriesTable.code,
       categoryDisplayName: categoriesTable.displayName,
     })
@@ -61,6 +63,7 @@ router.get("/transactions", async (req, res): Promise<void> => {
         ? parseFloat(r.categorizationConfidence)
         : null,
       txnTimestamp: r.txnTimestamp.toISOString(),
+      metadata: r.metadata ?? {},
     })),
   );
 });
@@ -115,6 +118,7 @@ router.patch("/transactions/:id/category", async (req, res): Promise<void> => {
     txnTimestamp: updated.txnTimestamp.toISOString(),
     categoryCode: category.code,
     categoryDisplayName: category.displayName,
+    metadata: updated.metadata ?? {},
   });
 });
 
