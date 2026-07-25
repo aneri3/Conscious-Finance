@@ -19,33 +19,36 @@ Traditional fintech trackers fail because they treat personal peer-to-peer (P2P)
 ## 🛠️ System Architecture & Data Flow
 
 Intent AI uses a decoupled full-stack TypeScript architecture built for absolute mathematical accuracy, security, and low-latency processing execution.
-[ Inbound Pipelines ]
-├── Path A: Account Aggregator (AA) Mock Sync
-├── Path B: Multi-Bank CSV Parse (HDFC / ICICI Parsing Filters)
-└── Path C: Localized IMAP Email Extraction Loop
-│
-▼
-┌────────────────────────────────────────────────────────┐
-│             Core Ingestion & Triage Engine              │
-├────────────────────────────────────────────────────────┤
-│ Tier 1: Deterministic Regular Expressions              │
-│ Tier 2: Indian P2P Structural Heuristics               │
-│ Tier 3: Context-Driven Batch Velocity Clustering       │
-└─────────────────────────┬──────────────────────────────┘
-│
-▼
-┌─────────────────────────┐
-│  PostgreSQL Database    │
-└────────────┬────────────┘
-│
-┌─────────────┴─────────────┐
-▼                           ▼
-┌─────────────────────┐     ┌─────────────────────┐
-│  Habit Audit Card   │     │ Conversational LLM  │
-│  [Experimental]     │     │ Search Proxy Header │
-└─────────────────────┘     └─────────────────────┘
+[ Inbound Pipelines ] \
+├── Path A: Account Aggregator (AA) Mock Sync \
+├── Path B: Multi-Bank CSV Parse (HDFC / ICICI Parsing Filters) \
+└── Path C: Localized IMAP Email Extraction Loop \
+│ \
+▼ \
+┌────────────────────────────────────────────────────────┐ \
+│             Core Ingestion & Triage Engine             │ \
+├────────────────────────────────────────────────────────┤ \
+│ Tier 1: Deterministic Regular Expressions              │ \
+│ Tier 2: Indian P2P Structural Heuristics               │ \
+│ Tier 3: Context-Driven Batch Velocity Clustering       │ \
+└─────────────────────────┬──────────────────────────────┘ \
+│ \
+▼ \
+┌─────────────────────────┐ \
+│  PostgreSQL Database    │ \
+└────────────┬────────────┘ \
+│ \
+┌─────────────┴─────────────┐ \
+▼                           ▼ \
+┌─────────────────────┐     ┌─────────────────────┐ \
+│  Habit Audit Card   │     │ Conversational LLM  │ \
+│  [Experimental]     │     │ Search Proxy Header │ \
+└─────────────────────┘     └─────────────────────┘ \
+\
+--- 
 
----
+## ✨ Figma link
+https://www.figma.com/make/bfejw47RjHP24txsEkRk7W/User-request?t=WD9G9TZv14gfhssA-20&fullscreen=1
 
 ## ✨ Features Breakdown
 
